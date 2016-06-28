@@ -14,6 +14,9 @@ buildscript {
 apply plugin: 'java'
 apply plugin: 'spring-boot'
 
+springBoot {
+    mainClass = "com.reactiva.hazelq.Server"
+}
 
 jar {
 	baseName = 'proto-server'
@@ -21,8 +24,8 @@ jar {
 	
 }
 
-sourceCompatibility = 1.8
-targetCompatibility = 1.8
+sourceCompatibility = 1.7
+targetCompatibility = 1.7
 
 repositories {
   mavenCentral()
@@ -35,7 +38,7 @@ dependencies {
   compile ('org.springframework.boot:spring-boot-starter')
   compile('com.hazelcast:hazelcast:3.6.2')
   compile ('com.esotericsoftware:kryo:3.0.3')
-  compile('org.mapdb:mapdb:3.0.0-RC2')
+  //compile('org.mapdb:mapdb:3.0.0-RC2')
   //compile('com.google.code.gson:gson:2.5')
   
 }

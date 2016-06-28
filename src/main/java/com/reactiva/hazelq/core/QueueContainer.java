@@ -29,26 +29,21 @@ SOFTWARE.
 package com.reactiva.hazelq.core;
 
 import java.io.File;
-import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.LinkedList;
-import java.util.Map.Entry;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import org.mapdb.DB;
+/*import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.mapdb.DataInput2;
 import org.mapdb.DataOutput2;
 import org.mapdb.HTreeMap;
 import org.mapdb.Serializer;
 import org.mapdb.serializer.SerializerByteArray;
-import org.slf4j.Logger;
+*/import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.reactiva.hazelq.Message;
 import com.reactiva.hazelq.utils.Synchronizer;
-import com.reactiva.hazelq.utils.TimeUIDGen;
 
 class QueueContainer implements Runnable {
 
@@ -61,14 +56,14 @@ class QueueContainer implements Runnable {
   private final QueueService service;
   
   private ExecutorService threadPool;
-  private HTreeMap<QID, QMessage> mapdb;
+  //private HTreeMap<QID, QMessage> mapdb;
   public QueueContainer(String qname, QueueService service) {
     this.qname = qname;
     this.service = service;
   }
   
   private void mapdb(File f)
-  {
+  {/*
     DB db = DBMaker.fileDB(f).closeOnJvmShutdown().fileMmapEnableIfSupported().make();
     mapdb = db.hashMap(qname, new Serializer<QID>() {
 
@@ -158,7 +153,7 @@ class QueueContainer implements Runnable {
 
       }
     }).createOrOpen();
-  }
+  */}
   /**
    * 
    */
@@ -185,7 +180,7 @@ class QueueContainer implements Runnable {
   }
   
   private void processUnacknowledged() {
-    if(mapdb != null)
+    /*if(mapdb != null)
     {
      
       for(Entry<QID, QMessage> ent : mapdb.getEntries())
@@ -193,7 +188,7 @@ class QueueContainer implements Runnable {
         service.add(new MessageAndKey(ent.getKey(), ent.getValue()), true);
         log.info(":: Re-processed unacknowledged items");
       }
-    }
+    }*/
     
   }
   public void destroy()
@@ -248,10 +243,10 @@ class QueueContainer implements Runnable {
         MessageAndKey m = service.poll(qname);
         log.debug("Polling done..");
         if (m.message != null) {
-          if(mapdb != null)
+          /*if(mapdb != null)
           {
             mapdb.put(m.key, m.message);
-          }
+          }*/
           threadPool.submit(new Worker(o, m));
         } 
       } finally {
@@ -299,11 +294,11 @@ class QueueContainer implements Runnable {
   {
     try {
       o.update(null, m);
-      if(mapdb != null)
+      /*if(mapdb != null)
       {
         mapdb.remove(m.key);
       }
-    } catch (Exception e) {
+*/    } catch (Exception e) {
       log.error("-- Container caught execption --", e);
       service.add(m, true);
     }

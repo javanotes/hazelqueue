@@ -78,7 +78,7 @@ public class QueueService {
   @PreDestroy
   private void stop()
   {
-    log.info("::::::::: Shutdown sequence initiated ::::::::");
+    log.warn("::::::::: Shutdown sequence initiated ::::::::");
     for(MQueueImpl mq : allQueue.values())
     {
       mq.close();
