@@ -1,6 +1,6 @@
 /* ============================================================================
 *
-* FILE: QueueListener.java
+* FILE: Synchronizer.java
 *
 The MIT License (MIT)
 
@@ -26,26 +26,19 @@ SOFTWARE.
 *
 * ============================================================================
 */
-package com.reactiva.hazelq.core;
+package com.reactiva.hazelq.utils;
 
-import java.util.Observable;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.reactiva.hazelq.Message;
-/**
- * 
- */
-public abstract class QueueListener  {
+public class Synchronizer {
 
-  /**
-   * 
-   * @param m
-   * @throws Exception 
-   */
-  protected abstract void onMessage(Message m) throws Exception;
-  
-  final void update(Observable arg0, Object arg1) throws Exception {
-    MessageAndKey mk = (MessageAndKey) arg1;
-    onMessage(mk.message.getPayload());
+  private final AtomicBoolean sync = new AtomicBoolean();
+  public void begin()
+  {
+    while(!sync.compareAndSet(false, true));
   }
-
+  public void end()
+  {
+    sync.compareAndSet(true, false);
+  }
 }

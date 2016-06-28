@@ -1,6 +1,6 @@
 /* ============================================================================
 *
-* FILE: QueueListener.java
+* FILE: MessageAndKey.java
 *
 The MIT License (MIT)
 
@@ -28,24 +28,13 @@ SOFTWARE.
 */
 package com.reactiva.hazelq.core;
 
-import java.util.Observable;
+class MessageAndKey {
 
-import com.reactiva.hazelq.Message;
-/**
- * 
- */
-public abstract class QueueListener  {
-
-  /**
-   * 
-   * @param m
-   * @throws Exception 
-   */
-  protected abstract void onMessage(Message m) throws Exception;
-  
-  final void update(Observable arg0, Object arg1) throws Exception {
-    MessageAndKey mk = (MessageAndKey) arg1;
-    onMessage(mk.message.getPayload());
+  public MessageAndKey(QID key, QMessage m) {
+    super();
+    this.key = key;
+    this.message = m;
   }
-
+  public final QID key;
+  public final QMessage message;
 }

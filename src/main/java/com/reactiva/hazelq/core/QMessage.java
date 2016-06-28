@@ -29,37 +29,75 @@ SOFTWARE.
 package com.reactiva.hazelq.core;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
+import com.reactiva.hazelq.Message;
 
-public class QMessage implements DataSerializable {
+class QMessage implements DataSerializable {
 
   public QMessage() {
     
   }
-  public QMessage(String payload) {
+  public QMessage(Message payload) {
     super();
     this.payload = payload;
   }
-  public String getPayload() {
+  public Message getPayload() {
     return payload;
   }
+  
+  private AtomicInteger submit = new AtomicInteger(1);
 
-  public void setPayload(String payload) {
+  public int getSubmitCount() {
+    return submit.get();
+  }
+    public void setPayload(Message payload) {
     this.payload = payload;
   }
-  private String payload;
+  private Message payload;
   @Override
   public void writeData(ObjectDataOutput out) throws IOException {
-    out.writeUTF(payload);
+    if(payload == null)
+    {
+      out.writeBoolean(false);
+    }
+    else
+    {
+      out.writeBoolean(true);
+      out.writeUTF(payload.getCorrelationID());
+      out.writeUTF(payload.getDestination());
+      out.writeUTF(payload.getReplyTo());
+      out.writeLong(payload.getExpiryMillis());
+      out.writeLong(payload.getTimestamp());
+      out.writeByteArray(payload.getPayload());
+    }
+    out.writeInt(submit.get());
   }
 
   @Override
   public void readData(ObjectDataInput in) throws IOException {
-    payload = in.readUTF();
-
+    boolean haspayload = in.readBoolean();
+    if(haspayload)
+    {
+      payload = new Message();
+      payload.setCorrelationID(in.readUTF());
+      payload.setDestination(in.readUTF());
+      payload.setReplyTo(in.readUTF());
+      payload.setExpiryMillis(in.readLong());
+      payload.setTimestamp(in.readLong());
+      payload.setPayload(in.readByteArray());
+    }
+    submit = new AtomicInteger(in.readInt());
+    
+    if (haspayload) {
+      payload.setRedelivered(submit.get() > 1);
+    }
   }
-
+  void incrRedelivery()
+  {
+    submit.incrementAndGet();
+  }
 }

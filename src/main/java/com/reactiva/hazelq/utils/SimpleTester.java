@@ -30,15 +30,13 @@ package com.reactiva.hazelq.utils;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import javax.annotation.PostConstruct;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
-import com.reactiva.hazelq.core.QMessage;
+import com.reactiva.hazelq.Message;
 import com.reactiva.hazelq.core.QueueListener;
 import com.reactiva.hazelq.core.QueueService;
 @Component
@@ -53,13 +51,18 @@ public class SimpleTester implements CommandLineRunner {
     service.registerListener(new QueueListener() {
       
       @Override
-      protected void onMessage(QMessage m) {
-        log.info("Got message:: "+m.getPayload());
-        try {
+      protected void onMessage(Message m) throws Exception {
+        
+        /*if(m.getPayloadAsUTF().contains("63") && !m.isRedelivered())
+          throw new Exception("Single exception for 63");*/
+        
+        log.info("Got message:: "+m.getPayloadAsUTF());
+        
+        /*try {
           Thread.sleep(1000);
         } catch (InterruptedException e) {
           
-        }
+        }*/
       }
     }, "testQ");
     
@@ -72,11 +75,11 @@ public class SimpleTester implements CommandLineRunner {
       public void run()
       {
         String s;
-        for(int i=0; i<100; i++)
+        for(int i=0; i<10000; i++)
         {
           s = "payload=>"+ai.incrementAndGet();
           log.debug("Submitting: "+s);
-          service.add(new QMessage(s), "testQ");
+          service.add(new Message(s, "testQ"));
         }
         
         log.info("######### Submitted test messages ##########");
@@ -91,8 +94,7 @@ public class SimpleTester implements CommandLineRunner {
   @Override
   public void run(String... args) throws Exception {
     
-    //pub();
-    
+    pub();
     sub();
   }
 

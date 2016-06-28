@@ -41,11 +41,14 @@ import javax.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.util.Assert;
 
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.Partition;
+import com.reactiva.hazelq.Message;
 
 public class QueueService {
 
@@ -55,13 +58,31 @@ public class QueueService {
   private Map<String, MQueueImpl> allQueue = new HashMap<>();
   private Map<String, QueueContainer> allQueueListeners = new HashMap<>();
   private ExecutorService containerThreads;
+  @Value("${spring.hazelcast.tmp_path}")
+  private String tmpFolder;
   
   @Autowired
   private UIDGenerator uidGen;
-  
+  /**
+   * If hazelcast is running
+   * @return
+   */
+  public boolean isRunning(){
+    try {
+      return hz.getLifecycleService().isRunning();
+    } catch (Exception e) {
+      //log.warn(e);
+    }
+    return false;
+  }
   @PreDestroy
   private void stop()
   {
+    log.info("::::::::: Shutdown sequence initiated ::::::::");
+    for(MQueueImpl mq : allQueue.values())
+    {
+      mq.close();
+    }
     for(QueueContainer qc : allQueueListeners.values())
     {
       qc.destroy();
@@ -72,6 +93,8 @@ public class QueueService {
     } catch (InterruptedException e) {
       
     }
+    if(hz.getLifecycleService().isRunning())
+      hz.getLifecycleService().shutdown();
   }
   
   static final String HZ_MAP_SERVICE = "hz:impl:mapService";
@@ -124,7 +147,7 @@ public class QueueService {
       
     }
     
-    log.info("Hazelcast boot sequence complete. Joined group ["+hz.getConfig().getGroupConfig().getName()+"]");
+    log.info("Hazelcast system initialized. Joined group ["+hz.getConfig().getGroupConfig().getName()+"]");
     StringBuilder sb = new StringBuilder("");
     for(Member m : hz.getCluster().getMembers())
     {
@@ -132,14 +155,14 @@ public class QueueService {
     }
     
     log.info(sb.toString());
-    
+    log.info("::::::::: Startup sequence completed ::::::::");
     
   }
   public QueueService(){
     
   }
   /**
-   * 
+   * Register listener on a given queue.
    * @param ql
    * @param q
    */
@@ -156,6 +179,7 @@ public class QueueService {
         {
           QueueContainer qc = new QueueContainer(q, this);
           qc.setThreadPool(containerThreads);
+          qc.setTempDBPath(tmpFolder);
           qc.start();
           allQueueListeners.put(q, qc);
         }
@@ -187,19 +211,32 @@ public class QueueService {
    * @param q
    * @return
    */
-  public boolean add(QMessage m, String q)
+  private boolean add(QMessage m, String q)
   {
     return getQ(q).add(m);
   }
+  
   /**
-   * Non-Blocking poll
+   * Adds a new message to queue.
+   * @param msg
+   * @return
+   */
+  public boolean add(Message msg)
+  {
+    if(!isRunning())
+      return false;
+    Assert.notNull(msg.getDestination(), "Destination is null");
+    return add(new QMessage(msg), msg.getDestination());
+  }
+  /**
+   * Non-Blocking poll.
    * @param q
    * @return
    * @throws InterruptedException
    */
-  public QMessage poll(String q)
+  public MessageAndKey poll(String q)
   {
-    return getQ(q).poll();
+    return getQ(q).pollMessageAndKey();
     
   }
   
@@ -211,7 +248,7 @@ public class QueueService {
    * @return
    * @throws InterruptedException
    */
-  public QMessage poll(String q, long duration, TimeUnit unit) throws InterruptedException
+  QMessage poll(String q, long duration, TimeUnit unit) throws InterruptedException
   {
     return getQ(q).poll(duration, unit);
     
@@ -223,7 +260,7 @@ public class QueueService {
    * @param unit
    * @return
    */
-  public QMessage pollUninterruptibly(String q, long duration, TimeUnit unit)
+  QMessage pollUninterruptibly(String q, long duration, TimeUnit unit)
   {
     boolean interrupted = false;
     while (true) {
@@ -248,18 +285,36 @@ public class QueueService {
    * @return
    * @throws InterruptedException
    */
-  public QMessage peek(String q, long duration, TimeUnit unit) throws InterruptedException
+  QMessage peek(String q, long duration, TimeUnit unit) throws InterruptedException
   {
     return getQ(q).peek(duration, unit);
     
   }
+  /**
+   * 
+   * @param q
+   * @return
+   */
   public Integer size(String q)
   {
     return getQ(q).size();
     
   }
+  /**
+   * 
+   * @param q
+   */
   public void clear(String q)
   {
     getQ(q).clear();
+  }
+  /**
+   * Do a redelivery.
+   * @param m
+   */
+  void add(MessageAndKey m, boolean redelivery) {
+    if(redelivery)
+      m.message.incrRedelivery();
+    getQ(m.message.getPayload().getDestination()).add(m.key, m.message);
   }
 }

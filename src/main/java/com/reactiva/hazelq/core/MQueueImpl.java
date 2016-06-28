@@ -28,6 +28,7 @@ SOFTWARE.
 */
 package com.reactiva.hazelq.core;
 
+import java.io.Closeable;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -45,12 +46,13 @@ import com.hazelcast.core.ISet;
 import com.hazelcast.core.ItemEvent;
 import com.hazelcast.core.ItemListener;
 import com.reactiva.hazelq.grid.AbstractLocalMapEntryListener;
+import com.reactiva.hazelq.utils.Synchronizer;
 /**
  * 
  *
  * @param <E>
  */
-class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQueue {
+class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQueue,Closeable {
 
   
   private UIDGenerator uidGen;
@@ -157,8 +159,14 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
     }
     return false;
   }
+  private Synchronizer sync = new Synchronizer();
   private boolean addHead()
   {
+    sync.begin();
+    if(!stopping.compareAndSet(false, false)){
+      sync.end();
+      return false;
+    }
     qLockUninterruptibly();
     try 
     {
@@ -170,6 +178,7 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
     finally
     {
       qUnlock();
+      sync.end();
     }
     
     return false;
@@ -182,6 +191,8 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
 
   private QID removeHead() throws InterruptedException
   {
+    if(!hzService.getLifecycleService().isRunning())
+      return null;
     qLockUninterruptibly();
     try 
     {
@@ -190,8 +201,10 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
       TreeSet<QID> set = new TreeSet<>(headSet);
       if(!set.isEmpty()){
         QID head = set.first();
-        if(headSet.remove(head))
+        if(headSet.remove(head)){
+          //TODO: remove or not to remove
           return head;
+        }
       }
     } finally {
       qUnlock();
@@ -208,15 +221,22 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
     try 
     {
       UUID u = uidGen.getNextUID();
-      qMap.set(new QID(u), item);
-      log.debug("Put:: "+u);
+      add(new QID(u), item);
       return true;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
     return false;
   }
-
+  /**
+   * 
+   * @param key
+   * @param val
+   */
+  public void add(QID key, QMessage val)
+  {
+    qMap.set(key, val);
+  }
   private static final Logger log = LoggerFactory.getLogger(MQueueImpl.class);
   
   private QMessage peek0(QID k) throws InterruptedException
@@ -272,11 +292,17 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
    */
   @Override
   public QMessage poll()  {
+    MessageAndKey mk = pollMessageAndKey();
+    return mk.message;
+    
+  }
+  
+  public MessageAndKey pollMessageAndKey()  {
     QMessage msg = null;
-    //--------------
+    QID mk = null;
     try 
     {
-      QID mk;
+      
       mk = removeHead();
       
       if (mk != null) {
@@ -289,7 +315,8 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
     catch (Exception e) {
       e.printStackTrace();
     }
-    return msg;
+    
+    return new MessageAndKey(mk, msg);
   
   
   }
@@ -397,6 +424,14 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
     }
     return msg;
   
+  }
+
+  private AtomicBoolean stopping = new AtomicBoolean();
+  @Override
+  public void close() {
+    sync.begin();
+    stopping.compareAndSet(false, true);
+    sync.end();
   }
     
 }
