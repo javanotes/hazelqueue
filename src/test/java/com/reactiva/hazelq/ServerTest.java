@@ -26,7 +26,7 @@ SOFTWARE.
 *
 * ============================================================================
 */
-package com.reactive.protoserv;
+package com.reactiva.hazelq;
 
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
@@ -38,7 +38,7 @@ import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
-public class ServerTest implements Closeable{
+class ServerTest implements Closeable{
 
   private final SocketChannel channel;
   private ByteBuffer buff;

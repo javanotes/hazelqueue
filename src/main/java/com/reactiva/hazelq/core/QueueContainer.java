@@ -74,6 +74,21 @@ class QueueContainer implements Runnable {
   {
     addObserver(o);
   }
+  /**
+   * 
+   * @param o
+   * @return
+   */
+  public boolean unregister(QueueListener o)
+  {
+    sync.begin();
+    try {
+      return list.remove(o);
+    } finally {
+      sync.end();
+    }
+
+  }
   private final LinkedList<QueueListener> list = new LinkedList<>();
   private final Synchronizer sync = new Synchronizer();
   /**
@@ -207,7 +222,6 @@ class QueueContainer implements Runnable {
   
   }
  
-  private String tempDBPath;
   
   public long getTimeout() {
     return timeout;
@@ -221,11 +235,5 @@ class QueueContainer implements Runnable {
   public void setTimeoutUnit(TimeUnit timeoutUnit) {
     this.timeoutUnit = timeoutUnit;
   }
-  public String getTempDBPath() {
-    return tempDBPath;
-  }
-  public void setTempDBPath(String tempDBPath) {
-    this.tempDBPath = tempDBPath;
-  }
-
+  
 }

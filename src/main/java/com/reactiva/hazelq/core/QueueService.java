@@ -43,7 +43,6 @@ import javax.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.Assert;
 
 import com.hazelcast.core.DistributedObject;
@@ -62,10 +61,7 @@ public class QueueService {
   private Map<String, QueueContainer> allQueueListeners = new HashMap<>();
   
   private ForkJoinPool pollerThreads;
-  //private ExecutorService[] workerThreads;
   
-  @Value("${spring.hazelcast.tmp_path}")
-  private String tmpFolder;
   /**
    * 
    * @param poller
@@ -142,21 +138,7 @@ public class QueueService {
         
       }
     }, true);
-    
      
-    /*workerThreads = new ExecutorService[Runtime.getRuntime().availableProcessors()];
-    for(int i=0; i<workerThreads.length; i++)
-    {
-      workerThreads[i] = Executors.newSingleThreadExecutor(new ThreadFactory() {
-        
-        @Override
-        public Thread newThread(Runnable r) {
-          Thread t = new Thread(r, "Container.Worker - "+(containerThreadCount++));
-          return t;
-        }
-      });
-    }*/
-    
     
     log.info("Waiting for node to balance..");
     while(!hz.getPartitionService().isLocalMemberSafe()){
@@ -225,7 +207,6 @@ public class QueueService {
         if(!allQueueListeners.containsKey(q))
         {
           QueueContainer qc = new QueueContainer(q, this);
-          qc.setTempDBPath(tmpFolder);
           getQ(q).reEnqueueUnprocessed();
           qc.start();
           allQueueListeners.put(q, qc);

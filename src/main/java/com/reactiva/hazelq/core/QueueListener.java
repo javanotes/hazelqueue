@@ -36,6 +36,38 @@ import com.reactiva.hazelq.Message;
  */
 public abstract class QueueListener  {
 
+  @Override
+  public final int hashCode() {
+    final int prime = 31;
+    int result = 1;
+    result = prime * result + ((identifier() == null) ? 0 : identifier().hashCode());
+    return result;
+  }
+  @Override
+  public final boolean equals(Object obj) {
+    if (this == obj)
+      return true;
+    if (obj == null)
+      return false;
+    if (getClass() != obj.getClass())
+      return false;
+    QueueListener other = (QueueListener) obj;
+    if (identifier() == null) {
+      if (other.identifier() != null)
+        return false;
+    } else if (!identifier().equals(other.identifier()))
+      return false;
+    return true;
+  }
+
+  /**
+   * To be overridden to provide a listener identifier.
+   * @return
+   */
+  public String identifier()
+  {
+    return hashCode()+"";
+  }
   /**
    * To be overridden to increase concurrency.
    * @return
