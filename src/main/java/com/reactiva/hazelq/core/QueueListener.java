@@ -37,6 +37,14 @@ import com.reactiva.hazelq.Message;
 public abstract class QueueListener  {
 
   /**
+   * To be overridden to increase concurrency.
+   * @return
+   */
+  public int concurrency()
+  {
+    return 1;
+  }
+  /**
    * 
    * @param m
    * @throws Exception 

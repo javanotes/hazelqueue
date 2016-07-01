@@ -41,13 +41,20 @@ public interface MQueue {
 
   boolean add(QMessage item);
 
+  /**
+   * @deprecated Not functional
+   * @param timeout
+   * @param unit
+   * @return
+   * @throws InterruptedException
+   */
   QMessage peek(long timeout, TimeUnit unit) throws InterruptedException;
 
   /**
    * Non blocking
    * @return
    */
-  QMessage poll();
+  MessageAndKey poll();
   /**
    * 
    * @param timeout
@@ -55,6 +62,6 @@ public interface MQueue {
    * @return
    * @throws InterruptedException
    */
-  QMessage poll(long timeout, TimeUnit unit) throws InterruptedException;
+  MessageAndKey poll(long timeout, TimeUnit unit) throws InterruptedException;
 
 }

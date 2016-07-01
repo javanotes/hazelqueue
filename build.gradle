@@ -38,7 +38,7 @@ dependencies {
   compile ('org.springframework.boot:spring-boot-starter')
   compile('com.hazelcast:hazelcast:3.6.2')
   compile ('com.esotericsoftware:kryo:3.0.3')
-  //compile('org.mapdb:mapdb:3.0.0-RC2')
+  compile('org.mapdb:mapdb:3.0.0-RC2')
   //compile('com.google.code.gson:gson:2.5')
   
 }

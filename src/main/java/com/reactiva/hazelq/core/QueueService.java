@@ -28,11 +28,13 @@ SOFTWARE.
 */
 package com.reactiva.hazelq.core;
 
+import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinPool.ForkJoinWorkerThreadFactory;
+import java.util.concurrent.ForkJoinWorkerThread;
+import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.TimeUnit;
 
 import javax.annotation.PostConstruct;
@@ -52,15 +54,33 @@ import com.reactiva.hazelq.Message;
 
 public class QueueService {
 
+  static final String QMAP_SUFFIX = "_$1";
   private static final Logger log = LoggerFactory.getLogger(QueueService.class);
   @Autowired
   private HazelcastInstance hz;
   private Map<String, MQueueImpl> allQueue = new HashMap<>();
   private Map<String, QueueContainer> allQueueListeners = new HashMap<>();
-  private ExecutorService containerThreads;
+  
+  private ForkJoinPool pollerThreads;
+  //private ExecutorService[] workerThreads;
+  
   @Value("${spring.hazelcast.tmp_path}")
   private String tmpFolder;
-  
+  /**
+   * 
+   * @param poller
+   */
+  void submitPoller(Runnable poller)
+  {
+    pollerThreads.submit(poller);
+  }
+  /**
+   * @param worker
+   */
+  void submitWorker(RecursiveAction worker)
+  {
+    pollerThreads.invoke(worker);
+  }
   @Autowired
   private UIDGenerator uidGen;
   /**
@@ -87,46 +107,73 @@ public class QueueService {
     {
       qc.destroy();
     }
-    containerThreads.shutdown();
+    pollerThreads.shutdown();
     try {
-      containerThreads.awaitTermination(30, TimeUnit.SECONDS);
+      pollerThreads.awaitTermination(30, TimeUnit.SECONDS);
     } catch (InterruptedException e) {
       
     }
+    
     if(hz.getLifecycleService().isRunning())
       hz.getLifecycleService().shutdown();
   }
   
   static final String HZ_MAP_SERVICE = "hz:impl:mapService";
-  private DefaultMigrationListener migrationListener;
+  private ClusterListener clusterListener;
   private int containerThreadCount = 0;
   @PostConstruct
   private void init()
   {
-    containerThreads = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(), new ThreadFactory() {
+    pollerThreads = new ForkJoinPool(Runtime.getRuntime().availableProcessors(), new ForkJoinWorkerThreadFactory() {
       
       @Override
-      public Thread newThread(Runnable r) {
-        Thread t = new Thread(r, "Container - "+(containerThreadCount++));
+      public ForkJoinWorkerThread newThread(ForkJoinPool pool) {
+        ForkJoinWorkerThread t = new ForkJoinWorkerThread(pool){
+          
+        };
+        t.setName("Container - "+(containerThreadCount++));
         return t;
       }
-    });
+    }, new UncaughtExceptionHandler() {
+      
+      @Override
+      public void uncaughtException(Thread t, Throwable e) {
+        log.error("-- Uncaught exception in fork join pool --", e);
+        
+      }
+    }, true);
+    
      
+    /*workerThreads = new ExecutorService[Runtime.getRuntime().availableProcessors()];
+    for(int i=0; i<workerThreads.length; i++)
+    {
+      workerThreads[i] = Executors.newSingleThreadExecutor(new ThreadFactory() {
+        
+        @Override
+        public Thread newThread(Runnable r) {
+          Thread t = new Thread(r, "Container.Worker - "+(containerThreadCount++));
+          return t;
+        }
+      });
+    }*/
+    
+    
     log.info("Waiting for node to balance..");
     while(!hz.getPartitionService().isLocalMemberSafe()){
       
       try {
-        Thread.sleep(1000);
+        Thread.sleep(100);
       } catch (InterruptedException e) {
         
       }
     }
     log.info("Initializing distributed objects..");
     
-    migrationListener = new DefaultMigrationListener(hz);
-    hz.getCluster().addMembershipListener(migrationListener);
-    hz.getPartitionService().addMigrationListener(migrationListener);
-    hz.getPartitionService().addPartitionLostListener(migrationListener);
+    clusterListener = new ClusterListener(hz);
+    hz.getCluster().addMembershipListener(clusterListener);
+    hz.getPartitionService().addMigrationListener(clusterListener);
+    hz.getPartitionService().addPartitionLostListener(clusterListener);
+    log.info("Registered cluster listeners");
     
     for(DistributedObject obj : hz.getDistributedObjects())
     {
@@ -146,15 +193,15 @@ public class QueueService {
       }
       
     }
-    
+    log.info("---------------------------------------------");
     log.info("Hazelcast system initialized. Joined group ["+hz.getConfig().getGroupConfig().getName()+"]");
-    StringBuilder sb = new StringBuilder("");
+    
     for(Member m : hz.getCluster().getMembers())
     {
-      sb.append("\n\t").append(m.toString());
+      log.info("\t"+m.toString());
     }
-    
-    log.info(sb.toString());
+    log.info("---------------------------------------------");
+
     log.info("::::::::: Startup sequence completed ::::::::");
     
   }
@@ -178,8 +225,8 @@ public class QueueService {
         if(!allQueueListeners.containsKey(q))
         {
           QueueContainer qc = new QueueContainer(q, this);
-          qc.setThreadPool(containerThreads);
           qc.setTempDBPath(tmpFolder);
+          getQ(q).reEnqueueUnprocessed();
           qc.start();
           allQueueListeners.put(q, qc);
         }
@@ -197,7 +244,7 @@ public class QueueService {
         {
           MQueueImpl dq = new MQueueImpl(hz, q);
           dq.setUidGen(uidGen);
-          migrationListener.registerQueue(dq);
+          clusterListener.registerQueue(dq);
           allQueue.put(q, dq);
         }
       }
@@ -236,7 +283,7 @@ public class QueueService {
    */
   public MessageAndKey poll(String q)
   {
-    return getQ(q).pollMessageAndKey();
+    return getQ(q).poll();
     
   }
   
@@ -248,7 +295,7 @@ public class QueueService {
    * @return
    * @throws InterruptedException
    */
-  QMessage poll(String q, long duration, TimeUnit unit) throws InterruptedException
+  public MessageAndKey poll(String q, long duration, TimeUnit unit) throws InterruptedException
   {
     return getQ(q).poll(duration, unit);
     
@@ -260,25 +307,26 @@ public class QueueService {
    * @param unit
    * @return
    */
-  QMessage pollUninterruptibly(String q, long duration, TimeUnit unit)
+  MessageAndKey pollUninterruptibly(String q, long duration, TimeUnit unit)
   {
     boolean interrupted = false;
-    while (true) {
-      try {
-        return poll(q, duration, unit);
-      } catch (InterruptedException e) {
-        interrupted = true;
-      } 
-      finally{
-        if(interrupted)
-          Thread.currentThread().interrupt();
-      }
+
+    try {
+      return poll(q, duration, unit);
+    } catch (InterruptedException e) {
+      interrupted = true;
+    } 
+    finally{
+      if(interrupted)
+        Thread.currentThread().interrupt();
     }
+    return null;
+  
     
   }
 
   /**
-   * 
+   * @deprecated
    * @param q
    * @param duration
    * @param unit
@@ -316,5 +364,8 @@ public class QueueService {
     if(redelivery)
       m.message.incrRedelivery();
     getQ(m.message.getPayload().getDestination()).add(m.key, m.message);
+  }
+  void commit(MessageAndKey m) {
+    getQ(m.message.getPayload().getDestination()).removeSurrogate(m.key);    
   }
 }

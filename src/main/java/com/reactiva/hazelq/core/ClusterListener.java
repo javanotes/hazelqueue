@@ -1,6 +1,6 @@
 /* ============================================================================
 *
-* FILE: DefaultMigrationListener.java
+* FILE: ClusterListener.java
 *
 The MIT License (MIT)
 
@@ -45,8 +45,8 @@ import com.hazelcast.core.MigrationListener;
 import com.hazelcast.partition.PartitionLostEvent;
 import com.hazelcast.partition.PartitionLostListener;
 
-class DefaultMigrationListener implements MigrationListener, PartitionLostListener, MembershipListener {
-  private static final Logger log = LoggerFactory.getLogger(DefaultMigrationListener.class);
+class ClusterListener implements MigrationListener, PartitionLostListener, MembershipListener {
+  private static final Logger log = LoggerFactory.getLogger(ClusterListener.class);
   private HazelcastInstance hzInstance;
   /**
    * 
@@ -55,12 +55,21 @@ class DefaultMigrationListener implements MigrationListener, PartitionLostListen
   /**
    * @param hazelcastClusterServiceBean
    */
-  public DefaultMigrationListener(HazelcastInstance hazelcastClusterServiceBean) {
+  public ClusterListener(HazelcastInstance hazelcastClusterServiceBean) {
     this.hzInstance = hazelcastClusterServiceBean;
   }
   private final Set<Integer> partCounts = new HashSet<>();
   @Override
   public void migrationStarted(MigrationEvent migrationevent) {
+    
+    if (migrationevent.getNewOwner().localMember()) {
+      onIncomingStarted(migrationevent);
+    }
+    
+  }
+  
+  private void onIncomingStarted(MigrationEvent event)
+  {
     synchronized (partCounts) {
       if(partCounts.isEmpty())
       {
@@ -70,18 +79,17 @@ class DefaultMigrationListener implements MigrationListener, PartitionLostListen
         }
         
       }
-      partCounts.add(migrationevent.getPartitionId());
+      partCounts.add(event.getPartitionId());
       partCounts.notifyAll();
     }
-    
-    
   }
-
   @Override
   public void migrationFailed(MigrationEvent migrationevent) {
     log.warn("** Partition migration failed ** "+migrationevent);
     
-    doEndMigration(null, migrationevent.getPartitionId());
+    if (migrationevent.getNewOwner().localMember()) {
+      onIncomingEnd(null, migrationevent.getPartitionId());
+    }
   }
   
   private final List<MQueueImpl> observers = new ArrayList<>();
@@ -91,7 +99,7 @@ class DefaultMigrationListener implements MigrationListener, PartitionLostListen
     observers.add(dq);
   }
   
-  private void doEndMigration(MigrationEvent migrationevent, int partId)
+  private void onIncomingEnd(MigrationEvent migrationevent, int partId)
   {
     synchronized (partCounts) {
       while(partCounts.isEmpty())
@@ -115,15 +123,16 @@ class DefaultMigrationListener implements MigrationListener, PartitionLostListen
   @Override
   public void migrationCompleted(MigrationEvent migrationevent) 
   {
-    //log.info("Invoking MigratedEntryProcessors");
     log.debug("Invoking MigratedEntryProcessors. Migration detected for partition => "+migrationevent.getPartitionId());
-    doEndMigration(migrationevent, migrationevent.getPartitionId());
+    if (migrationevent.getNewOwner().localMember()) {
+      onIncomingEnd(migrationevent, migrationevent.getPartitionId());
+    }
     
   }
 
   @Override
   public void partitionLost(PartitionLostEvent event) {
-    log.info("PartitionLostEvent. Migration away detected of partition => "+event.getPartitionId());
+    log.warn("### PartitionLost => "+event.getPartitionId());
   }
 
   @Override
@@ -158,15 +167,11 @@ class DefaultMigrationListener implements MigrationListener, PartitionLostListen
 
   @Override
   public void memberRemoved(MembershipEvent membershipEvent) {
-    // TODO Auto-generated method stub
-    
+    log.info("Cluster member remove signalled :: "+membershipEvent);
   }
 
   @Override
-  public void memberAttributeChanged(
-      MemberAttributeEvent memberAttributeEvent) {
-    // TODO Auto-generated method stub
-    
+  public void memberAttributeChanged(MemberAttributeEvent memberAttributeEvent) {
   }
 
 }

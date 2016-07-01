@@ -63,6 +63,8 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
   private ISet<QID> headSet;
   private final IMap<QID, QMessage> qMap;
   
+  private IMap<QID, QMessage> qMap2;
+  
   /**
    * 
    * @param hzService
@@ -74,12 +76,12 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
     qLock = hzService.getLock(queueName);
     headSet = hzService.getSet(queueName);
     qMap = hzService.getMap(queueName);
+    qMap2 = hzService.getMap(queueName+QueueService.QMAP_SUFFIX);
     
     headSet.addItemListener(new ItemListener<QID>() {
       
       @Override
       public void itemRemoved(ItemEvent<QID> item) {
-        // do nothing
         
       }
       
@@ -202,7 +204,6 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
       if(!set.isEmpty()){
         QID head = set.first();
         if(headSet.remove(head)){
-          //TODO: remove or not to remove
           return head;
         }
       }
@@ -238,7 +239,12 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
     qMap.set(key, val);
   }
   private static final Logger log = LoggerFactory.getLogger(MQueueImpl.class);
-  
+  /**
+   * @deprecated
+   * @param k
+   * @return
+   * @throws InterruptedException
+   */
   private QMessage peek0(QID k) throws InterruptedException
   {
     QID key = k != null ? k : removeHead();
@@ -247,8 +253,9 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
     }
     return null;
   }
-  /* (non-Javadoc)
+  /** (non-Javadoc)
    * @see com.reactiva.hazelq.core.MQueue#peek()
+   * @deprecated Not supported
    */
   @Override
   public QMessage peek(long timeout, TimeUnit unit) throws InterruptedException {
@@ -273,15 +280,24 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
     }
     return msg;
   }
-  
+  void reEnqueueUnprocessed()
+  {
+    for(QID id : qMap2.localKeySet())
+    {
+      add(id, qMap2.remove(id));
+    }
+  }
+  void removeSurrogate(QID key)
+  {
+    qMap2.removeAsync(key);
+  }
   private QMessage read(boolean commit, QID key)
   {
-    QMessage m = qMap.get(key);
-    if(commit)
-    {
-      qMap.remove(key);
-      
+    QMessage m = qMap.remove(key);
+    if (m != null) {
+      qMap2.set(key, m);
     }
+
     return m;
   }
   
@@ -291,22 +307,60 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
    * @see com.reactiva.hazelq.core.MQueue#poll()
    */
   @Override
-  public QMessage poll()  {
+  public MessageAndKey poll()  {
     MessageAndKey mk = pollMessageAndKey();
-    return mk.message;
+    return mk;
     
   }
-  
-  public MessageAndKey pollMessageAndKey()  {
-    QMessage msg = null;
+  /**
+   * 
+   */
+  @Override
+  public MessageAndKey poll(long timeout, TimeUnit unit) throws InterruptedException {
+
     QID mk = null;
+    MessageAndKey mkey = null;
+    try 
+    {
+      mk = removeHead();
+      if (mk == null) 
+      {
+        synchronized (mutex) 
+        {
+          mk = removeHead();
+          if (mk == null) {
+            if (timeout > 0) {
+              mutex.wait(unit.toMillis(timeout));
+            } else {
+              mutex.wait();
+            } 
+          }
+        }
+      }
+      mkey = poll0(mk);
+    } 
+    
+    catch (Exception e) {
+      e.printStackTrace();
+    }
+    return mkey;
+  
+  }
+
+  /**
+   * 
+   * @return
+   */
+  private MessageAndKey pollMessageAndKey()  {
+    QID mk = null;
+    MessageAndKey mkey = null;
     try 
     {
       
       mk = removeHead();
       
       if (mk != null) {
-        msg = poll0(mk);
+        mkey = poll0(mk);
         
       }
       
@@ -316,17 +370,17 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
       e.printStackTrace();
     }
     
-    return new MessageAndKey(mk, msg);
+    return mkey;
   
   
   }
-
-  private QMessage poll0(QID k) throws InterruptedException {
+  
+  private MessageAndKey poll0(QID k) throws InterruptedException {
     QID key = k != null ? k : removeHead();
     if (key != null) {
-      return read(true, key);
+      return new MessageAndKey(key, read(true, key));
     }
-    return null;
+    return new MessageAndKey(null, null);
   }
 
   //private final Lock partOpsLock = new ReentrantLock();
@@ -393,39 +447,8 @@ class MQueueImpl extends AbstractLocalMapEntryListener<QMessage> implements MQue
   }
 
 
-  @Override
-  public QMessage poll(long timeout, TimeUnit unit) throws InterruptedException {
-
-    QMessage msg = null;
-    //--------------
-    try 
-    {
-      QID mk;
-      synchronized (mutex) 
-      {
-        mk = removeHead();
-        if (mk == null) {
-          if (timeout > 0) {
-            mutex.wait(unit.toMillis(timeout));
-          }
-          else
-          {
-            mutex.wait();
-          }
-        }
-
-      }
-
-      msg = poll0(mk);
-    } 
-    
-    catch (Exception e) {
-      e.printStackTrace();
-    }
-    return msg;
+ 
   
-  }
-
   private AtomicBoolean stopping = new AtomicBoolean();
   @Override
   public void close() {

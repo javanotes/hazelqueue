@@ -28,6 +28,7 @@ SOFTWARE.
 */
 package com.reactiva.hazelq.utils;
 
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
@@ -35,6 +36,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
+import org.springframework.util.Assert;
+import org.springframework.util.StringUtils;
 
 import com.reactiva.hazelq.Message;
 import com.reactiva.hazelq.core.QueueListener;
@@ -46,23 +49,52 @@ public class SimpleTester implements CommandLineRunner {
   @Autowired
   QueueService service;
   
+  static final String COUNTER_PREFIX = "payload=>";
+  static final int MSG_COUNT = 100, MSG_OFFSET = 100;
   private void sub()
   {
     service.registerListener(new QueueListener() {
-      
+      @Override
+      public int concurrency()
+      {
+        return 1;
+      }
+      private int iter = 1;
+      private ConcurrentSkipListSet<Integer> set = new ConcurrentSkipListSet<>();
       @Override
       protected void onMessage(Message m) throws Exception {
         
         /*if(m.getPayloadAsUTF().contains("63") && !m.isRedelivered())
           throw new Exception("Single exception for 63");*/
+        String msg = m.getPayloadAsUTF();
+        log.info("Got message:: "+msg);
         
-        log.info("Got message:: "+m.getPayloadAsUTF());
+        Integer n = Integer.valueOf(StringUtils.delete(msg, COUNTER_PREFIX));
         
-        /*try {
+        if(!set.isEmpty())
+        {
+          int last = set.last();
+          try {
+            Assert.isTrue(n >= last, "Last: "+last+" Next:"+n);
+          } catch (Exception e) {
+            log.error(e.getMessage());
+          }
+        }
+        
+        if(!set.add(n))
+        {
+          log.error("Duplicate: "+n);
+        }
+        if(n % MSG_OFFSET == 0)
+          log.info("Consumed - "+(MSG_OFFSET*(iter++)));
+        
+        if(n == MSG_COUNT-1)
+          log.info("* Consumed all messages *");
+        try {
           Thread.sleep(1000);
         } catch (InterruptedException e) {
           
-        }*/
+        }
       }
     }, "testQ");
     
@@ -75,9 +107,9 @@ public class SimpleTester implements CommandLineRunner {
       public void run()
       {
         String s;
-        for(int i=0; i<10000; i++)
+        for(int i=0; i<MSG_COUNT; i++)
         {
-          s = "payload=>"+ai.incrementAndGet();
+          s = COUNTER_PREFIX+ai.incrementAndGet();
           log.debug("Submitting: "+s);
           service.add(new Message(s, "testQ"));
         }
