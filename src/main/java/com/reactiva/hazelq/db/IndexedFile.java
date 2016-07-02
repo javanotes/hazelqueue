@@ -34,13 +34,13 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -49,10 +49,11 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.springframework.util.Assert;
 
-public class IndexedFile implements Closeable, Runnable{
+class IndexedFile implements Closeable, Runnable{
 
   
-  private RandomAccessFile dbChn, idxChn;
+  private RandomAccessFile dbaseFile, indexFile;
+  private FileChannel dbChannel;
   private ReadWriteLock fileLock = new ReentrantReadWriteLock();
   private ScheduledExecutorService compactor;
   /**
@@ -100,10 +101,12 @@ public class IndexedFile implements Closeable, Runnable{
   private void open(File dbFile, File idxFile) throws IOException 
   {
     
-    dbChn = new RandomAccessFile(dbFile, "rwd");
-    idxChn = new RandomAccessFile(idxFile, "rwd");
-    dbChn.seek(dbChn.length());
-    idxChn.seek(idxChn.length());
+    dbaseFile = new RandomAccessFile(dbFile, "rwd");
+    indexFile = new RandomAccessFile(idxFile, "rwd");
+    dbaseFile.seek(dbFile.length());
+    indexFile.seek(idxFile.length());
+    
+    dbChannel = dbaseFile.getChannel();
   }
   /**
    * 
@@ -113,21 +116,23 @@ public class IndexedFile implements Closeable, Runnable{
   public void remove(String key) throws IOException
   {
     fileLock.writeLock().lock();
+    long fp = dbaseFile.getFilePointer();
     try
     {
-      if(indexMap.containsKey(key))
+    
+    	byte[] b = read(key);
+      if(b != null)
       {
         Long idx = indexMap.get(key);
-        ByteBuffer buff = ByteBuffer.allocate(4);
-        buff.asIntBuffer().put(0);
-        buff.flip();
-        dbChn.getChannel().write(buff, idx);
+        dbaseFile.seek(idx);
+        dbaseFile.writeInt(-1);
         indexMap.remove(key);
         dataMap.remove(idx);
       }
     }
     finally
     {
+    	dbaseFile.seek(fp);
       fileLock.writeLock().unlock();
     }
   }
@@ -142,9 +147,9 @@ public class IndexedFile implements Closeable, Runnable{
     fileLock.writeLock().lock();
     try 
     {
-      long fp = dbChn.getFilePointer();
-      dbChn.writeInt(bytes.length);
-      dbChn.write(bytes);
+      long fp = dbaseFile.getFilePointer();
+      dbaseFile.writeInt(bytes.length);
+      dbaseFile.write(bytes);
       
       writeIndex(key, fp);
     } 
@@ -155,26 +160,31 @@ public class IndexedFile implements Closeable, Runnable{
   }
   private Map<Long, byte[]> dataMap = new WeakHashMap<>();
   private Map<String, Long> indexMap = new HashMap<>();
-  
-  private boolean read0(long idx) throws IOException
+  /**
+   * Get the record from given offset.
+   * @param idx
+   * @return
+   * @throws IOException
+   */
+  private boolean read(long idx) throws IOException
   {
     ByteBuffer buff = ByteBuffer.allocate(4);
-    int read = dbChn.getChannel().read(buff, idx);
+    int read = dbChannel.read(buff, idx);
     Assert.isTrue(read == 4, "DB file corrupted");
     
     buff.flip();
     int len = buff.asIntBuffer().get();
-    if(len == 0)
+    if(len == -1)
       return false; //deleted
     
     buff = ByteBuffer.allocate(len);
     
     long pos = idx + 4;
-    read = dbChn.getChannel().read(buff, pos);
-    while(buff.hasRemaining() && read != -1)
+    read = dbChannel.read(buff, pos);
+    while(buff.hasRemaining() && read > 0)
     {
       pos += read;
-      read = dbChn.getChannel().read(buff, pos);
+      read = dbChannel.read(buff, pos);
     }
     Assert.isTrue(read == len, "DB file corrupted");
     buff.flip();
@@ -192,15 +202,25 @@ public class IndexedFile implements Closeable, Runnable{
     fileLock.readLock().lock();
     try
     {
-      if(!indexMap.containsKey(key))
-        readIdx(key);
+      if(!indexMap.containsKey(key)){
+        synchronized (indexMap) {
+			if (!indexMap.containsKey(key)) {
+				read0(key);
+			}
+		}
+      }
       
       Long idx = indexMap.get(key);
       if(idx != null)
       {
         if(!dataMap.containsKey(idx))
         {
-          boolean read = read0(idx);
+          boolean read = false;
+		synchronized (dataMap) {
+			if (!dataMap.containsKey(idx)) {
+				read = read(idx);
+			}
+		}
           if(!read)
             return null;
         }
@@ -214,91 +234,53 @@ public class IndexedFile implements Closeable, Runnable{
     }
     return null;
   }
-  private void readIdx(String key) throws IOException
+  /**
+   * Scan the index file for this key's offset.
+   * @param key
+   * @throws IOException
+   */
+  private void read0(String key) throws IOException
   {
-    
+    long fp = indexFile.getFilePointer();
     try 
     {
+      if(fp == 0)
+    	  return;
+      
       long pos = 0;
-      ByteBuffer dst;
-      int var = 0;
-      byte[] b;
+      indexFile.seek(pos);
       
-      long offset = pos;
-      int totalRead = 0;
-      int read = 0;
-      
-      long len = idxChn.length();
-      FileChannel channel = idxChn.getChannel();
-    
-      while (pos < len) 
+      int keyLen;
+      byte [] b;
+      long offset;
+      while (pos < fp) 
       {
-        
-            dst = ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN);
-            
-            totalRead = 0;
-            read = 0;
-            do
-            {
-              read = channel.read(dst, offset);
-              offset += read;
-              totalRead += read;
-            }
-            while(dst.hasRemaining() && read > 0);
-            
-            if(totalRead == -1)
-              break;//nothing has been written yet
-            Assert.isTrue(totalRead == 4, "Index file corrupted. keystring len not match "+totalRead);
-            dst.flip();
-            pos += totalRead;
-            
-            var = dst.asIntBuffer().get();
-            dst = ByteBuffer.allocate(var).order(ByteOrder.BIG_ENDIAN);
-            
-            offset = pos;
-            totalRead = 0;
-            read = 0;
-            do
-            {
-              read = channel.read(dst, offset);
-              offset += read;
-              totalRead += read;
-            }
-            while(dst.hasRemaining() && read > 0);
-            
-            Assert.isTrue(var == totalRead, "Index file corrupted. Expected len="+var+" got read="+totalRead);
-            
-            dst.flip();
-            pos += totalRead;
-            
-            b = Arrays.copyOfRange(dst.array(), 0, totalRead);
-            
-            if (new String(b, StandardCharsets.UTF_8).equals(key)) 
-            {
-              dst = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN);
-              Assert.isTrue(8 == channel.read(dst, pos), "Index file corrupted");
-              dst.flip();
-              long index = dst.asLongBuffer().get();
-              indexMap.put(key, index);
-              break;
-            } 
-          
+    	 keyLen = indexFile.readInt();
+    	 pos += 4;
+    	 b = new byte[keyLen];
+    	 indexFile.read(b, 0, keyLen);
+    	 pos += keyLen;
+    	 offset = indexFile.readLong();
+    	 pos += 8;
+    	 if(new String(b, StandardCharsets.UTF_8).equals(key))
+    	 {
+    		indexMap.put(key, offset); 
+    		return;
+    	 }
       }
-      
-      
-      
+           
     } 
     finally {
-      
+      indexFile.seek(fp);
     }
     
   }
 
   private void writeIndex(String key, long fp) throws IOException {
     byte[] utf8 = key.getBytes(StandardCharsets.UTF_8);
-    idxChn.writeInt(utf8.length);
-    idxChn.write(utf8);
-    idxChn.writeLong(fp);
+    indexFile.writeInt(utf8.length);
+    indexFile.write(utf8);
+    indexFile.writeLong(fp);
   }
 
   @Override
@@ -310,8 +292,9 @@ public class IndexedFile implements Closeable, Runnable{
       } catch (InterruptedException e) {
       } 
     }
-    idxChn.close();
-    dbChn.close();
+    indexFile.close();
+    dbaseFile.close();
+    dbChannel.close();
   }
   @Override
   public void run() {
@@ -330,29 +313,81 @@ public class IndexedFile implements Closeable, Runnable{
     
   }
   
+  private static void test(IndexedFile ifile)
+  {
+
+		try {
+			byte[] b = ifile.read("two");
+			  System.out.println(Thread.currentThread().getName() + " => " + new String(b, StandardCharsets.UTF_8));
+			  
+			  /*b = ifile.read("3");
+			  System.out.println(Thread.currentThread().getName() + " => " + new String(b, StandardCharsets.UTF_8));*/
+			  
+			  b = ifile.read("4");
+			  System.out.println(Thread.currentThread().getName() + " => 4" + b);
+			  
+			  ifile.remove("3");
+			  
+			  
+			  b = ifile.read("3");
+			  System.out.println(Thread.currentThread().getName() + " => 3 deleted "+b);
+
+			  b = ifile.read("two");
+			  System.out.println(Thread.currentThread().getName() + " => " + new String(b, StandardCharsets.UTF_8));
+			  
+			  b = ifile.read("one");
+			  System.out.println(Thread.currentThread().getName() + " => " + new String(b, StandardCharsets.UTF_8));
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+	
+  }
   public static void main(String[] args) throws IOException {
-    IndexedFile ifile = new IndexedFile("C:\\data\\hazelq", "test.db");
+    final IndexedFile ifile = new IndexedFile("C:\\workspace\\data\\hazelq", "test.db");
     try
     {
-      ifile.write("one", "one".getBytes(StandardCharsets.UTF_8));
+      /*ifile.write("one", "one".getBytes(StandardCharsets.UTF_8));
       ifile.write("two", "two".getBytes(StandardCharsets.UTF_8));
-      ifile.write("3", "3".getBytes(StandardCharsets.UTF_8));
+      ifile.write("3", "3".getBytes(StandardCharsets.UTF_8));*/
+    	
+    	//test(ifile);
       
-      byte[] b = ifile.read("two");
-      System.out.println(new String(b, StandardCharsets.UTF_8));
+      ExecutorService t = Executors.newFixedThreadPool(2);
+            
+      t.submit(new Runnable() {
+  		
+  		@Override
+  		public void run() {
+  			test(ifile);
+  			
+  		}
+  	});
       
-      b = ifile.read("3");
-      System.out.println(new String(b, StandardCharsets.UTF_8));
+      t.submit(new Runnable() {
+  		
+  		@Override
+  		public void run() {
+  			test(ifile);
+  		}
+  	});
       
-      b = ifile.read("4");
-      System.out.println("4" + b);
+      t.submit(new Runnable() {
+    		
+    		@Override
+    		public void run() {
+    			test(ifile);
+    		}
+    	});
       
-      ifile.remove("3");
+      t.shutdown();
+      try {
+		t.awaitTermination(10, TimeUnit.MINUTES);
+	} catch (InterruptedException e) {
+		
+	}
       
-      
-      b = ifile.read("3");
-      System.out.println("3" + b);
-
     }
     finally
     {
