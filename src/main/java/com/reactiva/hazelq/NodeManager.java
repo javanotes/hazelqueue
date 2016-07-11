@@ -1,6 +1,6 @@
 /* ============================================================================
 *
-* FILE: Server.java
+* FILE: NodeManager.java
 *
 The MIT License (MIT)
 
@@ -39,17 +39,18 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.DependsOn;
 
+import com.reactiva.hazelq.core.IQueueService;
 import com.reactiva.hazelq.core.QueueService;
 import com.reactiva.hazelq.core.UIDGenerator;
 import com.reactiva.hazelq.net.ProtocolHandlerFactory;
 import com.reactiva.hazelq.net.ServerSocketListener;
 
 @SpringBootApplication
-public class Server {
+public class NodeManager {
 
-  @Value("${server.port}")
+  @Value("${server.port:6985}")
   private int port;
-  @Value("${server.io-threads}")
+  @Value("${server.io-threads:1}")
   private int ioThreads;
   @Value("${server.event-threads.max}")
   private int evtThreadsMax;
@@ -62,7 +63,7 @@ public class Server {
     return new ProtocolHandlerFactory();
   }
   @Bean
-  public QueueService service()
+  public IQueueService service()
   {
     return new QueueService();
   }
@@ -79,7 +80,7 @@ public class Server {
     return new ServerSocketListener(port, evtThreadsMax, evtThreadsMin, ioThreads);
   }
   public static void main(String[] args) {
-    SpringApplication.run(Server.class, args);
+    SpringApplication.run(NodeManager.class, args);
   }
   @PostConstruct
   private void init() throws IOException

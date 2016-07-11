@@ -1,6 +1,6 @@
 /* ============================================================================
 *
-* FILE: IndexedFile.java
+* FILE: MappedFile.java
 *
 The MIT License (MIT)
 
@@ -31,15 +31,20 @@ package com.reactiva.hazelq.db;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.WeakHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -51,7 +56,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.Assert;
 /**
- * 
+ * @Experimental
+ * A local disk persistence system for storing key value records. The key is to be a UTF8 encoded string, and
+ * values are serialized bytes. Can be used as a simple file backed map data structure.
+ * <p><b>Note:</b> The compaction of deleted records is in WIP state.
  */
 public class MappedFile implements Closeable, Runnable{
 
@@ -71,6 +79,7 @@ public class MappedFile implements Closeable, Runnable{
   {
     this(dir, fileName, false, DEFAULT_CACHE_SIZE);
   }
+  private final String fileName;
   /**
    * 
    * @param dir
@@ -80,6 +89,7 @@ public class MappedFile implements Closeable, Runnable{
    */
   public MappedFile(String dir, String fileName, boolean usecompact, int cacheSize) throws IOException
   {
+    this.fileName = fileName;
     File f = new File(dir);
     if(!f.exists())
       f.mkdirs();
@@ -361,7 +371,6 @@ public class MappedFile implements Closeable, Runnable{
     }
     @Override
     public Long next() {
-
       fetch();           
       return offset;
     }
@@ -455,13 +464,51 @@ public class MappedFile implements Closeable, Runnable{
   }
   @Override
   public void run() {
-    compact();
+    try {
+      compact();
+    } catch (IOException e) {
+      log.error("-- Compaction task error --", e);
+    }
   }
-  private void compact() {
+  /**
+   * @WIP
+   * Compact the files by removing fragmentation caused by deleted records.
+   * This is an expensive operation and should be used with discretion.
+   * @throws IOException 
+   */
+  public void compact() throws IOException {
     fileLock.writeLock().lock();
     try
     {
       //TODO: compactor. index files have a boolean true
+
+      Set<Long> delIdxList = new TreeSet<>();
+      Set<Long> delDatList = new TreeSet<>();
+      
+      try(IndexIterator idxIter = new IndexIterator())
+      {
+        if(!idxIter.isEmpty())
+        {
+          Long offset;
+          while(idxIter.hasNext())
+          {
+            offset = idxIter.next();
+            if(idxIter.isDeleted())
+            {
+              delDatList.add(offset);
+              delIdxList.add(idxIter.idxOffset);
+            }
+            
+                       
+          }
+        }
+      } catch (IOException e) {
+        throw e;
+      }
+      
+      deleteIndices(delIdxList);
+      deleteData(delDatList);
+      clearCache();
     }
     finally
     {
@@ -469,5 +516,43 @@ public class MappedFile implements Closeable, Runnable{
     }
     
   }
+  private void clearCache() {
+    dataMap.clear();
+    indexMap.clear();
+  }
+  private void deleteIndices(Set<Long> offsets) throws IOException 
+  {
+    String tmpFileName = fileName+"_i_"+System.currentTimeMillis();
+    WritableByteChannel bkpFile = Channels.newChannel(new FileOutputStream(File.createTempFile(tmpFileName, null)));
+    indexFile.getChannel().transferTo(0, indexFile.length(), bkpFile);
+    
+    
+    
+    long pos = 0;
+    indexFile.seek(pos);
+    int len = 13;
+    for(Long off : offsets)
+    {
+      pos += off;
+      indexFile.seek(pos);
+      
+      //1 + 4 + array.len + 8
+      indexFile.readBoolean();
+      len += indexFile.readInt();
+      
+      indexFile.seek(pos);//go back
+      long nextPos = pos + len;
+      
+      indexFile.getChannel().transferTo(pos, indexFile.length(), bkpFile);
+      
+      len = 13;
+    }
+  }
+  private void deleteData(Set<Long> offsets) throws FileNotFoundException, IOException {
+    String tmpFileName = fileName+"_d_"+System.currentTimeMillis();
+    WritableByteChannel bkpFile = Channels.newChannel(new FileOutputStream(File.createTempFile(tmpFileName, null)));
+    dataFile.getChannel().transferTo(0, dataFile.length(), bkpFile);
+  }
+
   
 }

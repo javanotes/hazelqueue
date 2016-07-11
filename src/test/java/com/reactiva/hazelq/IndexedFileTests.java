@@ -74,9 +74,9 @@ public class IndexedFileTests {
     final MappedFile ifile = new MappedFile("C:\\data\\hazelq", "test.db");
     try
     {
-      ifile.write("one", "one".getBytes(StandardCharsets.UTF_8));
+      /*ifile.write("one", "one".getBytes(StandardCharsets.UTF_8));
       ifile.write("two", "two".getBytes(StandardCharsets.UTF_8));
-      ifile.write("3", "3".getBytes(StandardCharsets.UTF_8));
+      ifile.write("3", "3".getBytes(StandardCharsets.UTF_8));*/
       
       test(ifile);
       
