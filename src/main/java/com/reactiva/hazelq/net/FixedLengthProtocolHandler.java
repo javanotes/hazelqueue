@@ -51,7 +51,11 @@ public class FixedLengthProtocolHandler extends AbstractProtocolHandler {
   public byte[] doProcess(DataInputStream dataInputStream) throws Exception {
     return "".getBytes(StandardCharsets.UTF_8);
   }
-  
+  /**
+   * Extract the length of data bytes based on the length offset numeric type.
+   * Say for an {@linkplain ProtocolHandler#INT_OFFSET int offset}, the first 4 bytes
+   * would give the length of data bytes.
+   */
   protected void extractLength()
   {
     if(totalRead >= lengthOffset)
