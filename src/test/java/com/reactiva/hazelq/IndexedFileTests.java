@@ -34,36 +34,37 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import com.reactiva.hazelq.db.MappedFile;
+import com.reactiva.hazelq.db.BasicDurableMap;
 
 public class IndexedFileTests {
 
-  private static void test(MappedFile ifile)
+  private static void test(BasicDurableMap ifile)
   {
 
     try {
-      byte[] b = ifile.read("two");
+      byte[] b = ifile.get("two");
         System.out.println(Thread.currentThread().getName() + " => " + new String(b, StandardCharsets.UTF_8));
         
         /*b = ifile.read("3");
         System.out.println(Thread.currentThread().getName() + " => " + new String(b, StandardCharsets.UTF_8));*/
         
-        b = ifile.read("4");
+        b = ifile.get("4");
         System.out.println(Thread.currentThread().getName() + " => 4" + b);
         
         ifile.remove("3");
         
         
-        b = ifile.read("3");
+        b = ifile.get("3");
         System.out.println(Thread.currentThread().getName() + " => 3 deleted "+b);
 
-        b = ifile.read("two");
+        b = ifile.get("two");
+        System.out.println("Contains two===> "+ifile.containsKey("two"));
+        System.out.println("Size===> "+ifile.size());
         System.out.println(Thread.currentThread().getName() + " => " + new String(b, StandardCharsets.UTF_8));
         
-        b = ifile.read("one");
+        b = ifile.get("one");
         System.out.println(Thread.currentThread().getName() + " => " + new String(b, StandardCharsets.UTF_8));
-    } catch (IOException e) {
-      // TODO Auto-generated catch block
+    } catch (Exception e) {
       e.printStackTrace();
     }
     
@@ -71,7 +72,7 @@ public class IndexedFileTests {
   }
   public static void main(String[] args) throws IOException {
 
-    final MappedFile ifile = new MappedFile("C:\\data\\hazelq", "test.db");
+    final BasicDurableMap ifile = new BasicDurableMap("C:\\data\\hazelq", "test.db");
     try
     {
       /*ifile.write("one", "one".getBytes(StandardCharsets.UTF_8));

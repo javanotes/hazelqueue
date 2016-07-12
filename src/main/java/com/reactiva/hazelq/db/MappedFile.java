@@ -35,12 +35,13 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileChannel.MapMode;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -55,16 +56,19 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.Assert;
+
+import com.reactiva.hazelq.utils.DirectMem;
 /**
  * @Experimental
  * A local disk persistence system for storing key value records. The key is to be a UTF8 encoded string, and
  * values are serialized bytes. Can be used as a simple file backed map data structure.
  * <p><b>Note:</b> The compaction of deleted records is in WIP state.
  */
-public class MappedFile implements Closeable, Runnable{
+class MappedFile implements Closeable, Runnable{
 
   private static final Logger log = LoggerFactory.getLogger(MappedFile.class);
-  private RandomAccessFile dataFile, indexFile;
+  private RandomAccessFile dataFile;
+  private RandomAccessFile indexFile;
   private FileChannel dbChannel;
   private ReadWriteLock fileLock = new ReentrantReadWriteLock();
   private ScheduledExecutorService compactor;
@@ -118,10 +122,10 @@ public class MappedFile implements Closeable, Runnable{
   {
     
     dataFile = new RandomAccessFile(dbFile, "rwd");
-    indexFile = new RandomAccessFile(idxFile, "rwd");
+    setIndexFile(new RandomAccessFile(idxFile, "rwd"));
     
     dataFile.seek(dbFile.length());
-    indexFile.seek(idxFile.length());
+    getIndexFile().seek(idxFile.length());
     
     dbChannel = dataFile.getChannel();
     
@@ -153,15 +157,15 @@ public class MappedFile implements Closeable, Runnable{
   {
     dataFile.seek(idx.data);
     dataFile.writeInt(-1);
-    long ifptr = indexFile.getFilePointer();
+    long ifptr = getIndexFile().getFilePointer();
     try
     {
-      indexFile.seek(idx.idx);
-      indexFile.writeBoolean(true);//deleted
+      getIndexFile().seek(idx.idx);
+      getIndexFile().writeBoolean(true);//deleted
     }
     finally
     {
-      indexFile.seek(ifptr);
+      getIndexFile().seek(ifptr);
     }
   }
   /**
@@ -172,6 +176,7 @@ public class MappedFile implements Closeable, Runnable{
    */
   public byte[] remove(String key) throws IOException
   {
+    Assert.notNull(key, "Null key not supported");
     fileLock.writeLock().lock();
     long fp = dataFile.getFilePointer();
     try
@@ -192,7 +197,7 @@ public class MappedFile implements Closeable, Runnable{
     return null;
   }
   /**
-   * Write the value bytes corresponding to the given key.
+   * Write the value bytes corresponding to the given key. Null key/value not supported.
    * @param key
    * @param bytes
    * @return 
@@ -200,6 +205,8 @@ public class MappedFile implements Closeable, Runnable{
    */
   public byte[] write(String key, byte[] bytes) throws IOException
   {
+    Assert.notNull(key, "Null key not supported");
+    Assert.notNull(bytes, "Null value not supported");
     byte[] prev = remove(key);//remove any existing key
     boolean err = false;
     fileLock.writeLock().lock();
@@ -304,6 +311,7 @@ public class MappedFile implements Closeable, Runnable{
    */
   public byte[] read(String key) throws IOException
   {
+    Assert.notNull(key, "Null key not supported");
     fileLock.readLock().lock();
     try {
       return read0(key);
@@ -313,97 +321,6 @@ public class MappedFile implements Closeable, Runnable{
 
   }
   /**
-   * 
-   */
-  private class IndexIterator implements Iterator<Long>,Closeable
-  {
-
-    private final long fptr;
-    private long pos, idxOffset;
-    
-    long offset;
-    int keyLen;
-    private boolean deleted;
-    byte [] b;
-
-    public byte[] nextBytes()
-    {
-      return b;
-    }
-    public boolean isEmpty()
-    {
-      return fptr == 0;
-    }
-    /**
-     * 
-     * @throws IOException
-     */
-    public IndexIterator() throws IOException {
-      fptr = indexFile.getFilePointer();
-      pos = 0;
-      indexFile.seek(pos);
-    }
-    @Override
-    public boolean hasNext() {
-      return pos < fptr;
-    }
-
-    private void fetch()
-    {
-      
-      try 
-      {
-        idxOffset = pos;
-        deleted = indexFile.readBoolean();
-        pos += 1;
-        keyLen = indexFile.readInt();
-        pos += 4;
-        b = new byte[keyLen];
-        indexFile.read(b, 0, keyLen);
-        pos += keyLen;
-        offset = indexFile.readLong();
-        pos += 8;
-        
-      } catch (IOException e) {
-        throw new IllegalStateException(e);
-      }
-
-    }
-    @Override
-    public Long next() {
-      fetch();           
-      return offset;
-    }
-    @Override
-    public void close() throws IOException {
-      indexFile.seek(fptr);    
-    }
-    
-    public boolean isDeleted() {
-      return deleted;
-    }
-    
-    
-  }
-  /**
-   * 
-   */
-  private static class Offsets
-  {
-    /**
-     * 
-     * @param data
-     * @param idx
-     */
-    public Offsets(long data, long idx) {
-      super();
-      this.data = data;
-      this.idx = idx;
-    }
-
-    private final long data, idx;
-  }
-  /**
    * Scan the index file for this key's offset.
    * @param key
    * @return 
@@ -411,7 +328,7 @@ public class MappedFile implements Closeable, Runnable{
    */
   private boolean readIndex(String key) throws IOException
   {
-    try(IndexIterator idxIter = new IndexIterator())
+    try(IndexIterator idxIter = new IndexIterator(this))
     {
       if(!idxIter.isEmpty())
       {
@@ -426,7 +343,7 @@ public class MappedFile implements Closeable, Runnable{
           
           if(new String(b, StandardCharsets.UTF_8).equals(key))
           {
-           indexMap.put(key, new Offsets(offset, idxIter.idxOffset)); 
+           indexMap.put(key, new Offsets(offset, idxIter.getIdxOffset())); 
            return true;
           }
 
@@ -439,13 +356,13 @@ public class MappedFile implements Closeable, Runnable{
 
   private long writeIndex(String key, long fp) throws IOException {
     byte[] utf8 = key.getBytes(StandardCharsets.UTF_8);
-    long ifp = indexFile.getFilePointer();
+    long ifp = getIndexFile().getFilePointer();
     
-    indexFile.writeBoolean(false);//deleted
-    indexFile.writeInt(utf8.length);
-    indexFile.write(utf8);
-    indexFile.writeLong(fp);
-    log.debug("Index offsets written "+ifp+":"+indexFile.getFilePointer());
+    getIndexFile().writeBoolean(false);//deleted
+    getIndexFile().writeInt(utf8.length);
+    getIndexFile().write(utf8);
+    getIndexFile().writeLong(fp);
+    log.debug("Index offsets written "+ifp+":"+getIndexFile().getFilePointer());
     return ifp;
   }
 
@@ -458,7 +375,7 @@ public class MappedFile implements Closeable, Runnable{
       } catch (InterruptedException e) {
       } 
     }
-    indexFile.close();
+    getIndexFile().close();
     dataFile.close();
     dbChannel.close();
   }
@@ -470,6 +387,90 @@ public class MappedFile implements Closeable, Runnable{
       log.error("-- Compaction task error --", e);
     }
   }
+  /**
+   * Scans the index file to check if the key is present. Null key not supported
+   * @param key
+   * @return
+   * @throws IOException
+   */
+  public boolean contains(String key) throws IOException
+  {
+    Assert.notNull(key, "Null key not supported");
+    MappedByteBuffer buff = null;
+    fileLock.readLock().lock();
+    try
+    {
+      long len = getIndexFile().length();
+      buff = getIndexFile().getChannel().map(MapMode.READ_ONLY, 0, len);
+      byte[] b;
+      while(buff.hasRemaining())
+      {
+        boolean deleted = buff.get() != 0;
+        
+        int b_len = buff.getInt();
+        b = new byte[b_len];
+        buff.get(b);
+        buff.getLong();
+        
+        if(!deleted)
+        {
+          if(key.equals(new String(b, StandardCharsets.UTF_8)))
+          {
+            return true;
+          }
+        }
+      }
+      
+    }
+    finally
+    {
+      if (buff != null) {
+        buff.clear();
+        DirectMem.unmap(buff);
+      }
+      fileLock.readLock().unlock();
+    }
+    return false;
+    
+  
+  }
+  /**
+   * Scans the index file to get the size of the map.
+   * @return
+   * @throws IOException
+   */
+  public int size() throws IOException
+  {
+    MappedByteBuffer buff = null;
+    fileLock.readLock().lock();
+    try
+    {
+      long len = getIndexFile().length();
+      buff = getIndexFile().getChannel().map(MapMode.READ_ONLY, 0, len);
+      int count = 0;
+      while(buff.hasRemaining())
+      {
+        boolean deleted = buff.get() != 0;
+        if(!deleted)
+          count++;
+        int b_len = buff.getInt();
+        buff.get(new byte[b_len]);
+        buff.getLong();
+      }
+      
+      return count;
+    }
+    finally
+    {
+      if (buff != null) {
+        buff.clear();
+        DirectMem.unmap(buff);
+      }
+      fileLock.readLock().unlock();
+    }
+    
+  }
+  
   /**
    * @WIP
    * Compact the files by removing fragmentation caused by deleted records.
@@ -485,7 +486,7 @@ public class MappedFile implements Closeable, Runnable{
       Set<Long> delIdxList = new TreeSet<>();
       Set<Long> delDatList = new TreeSet<>();
       
-      try(IndexIterator idxIter = new IndexIterator())
+      try(IndexIterator idxIter = new IndexIterator(this))
       {
         if(!idxIter.isEmpty())
         {
@@ -496,7 +497,7 @@ public class MappedFile implements Closeable, Runnable{
             if(idxIter.isDeleted())
             {
               delDatList.add(offset);
-              delIdxList.add(idxIter.idxOffset);
+              delIdxList.add(idxIter.getIdxOffset());
             }
             
                        
@@ -524,26 +525,26 @@ public class MappedFile implements Closeable, Runnable{
   {
     String tmpFileName = fileName+"_i_"+System.currentTimeMillis();
     WritableByteChannel bkpFile = Channels.newChannel(new FileOutputStream(File.createTempFile(tmpFileName, null)));
-    indexFile.getChannel().transferTo(0, indexFile.length(), bkpFile);
+    getIndexFile().getChannel().transferTo(0, getIndexFile().length(), bkpFile);
     
     
     
     long pos = 0;
-    indexFile.seek(pos);
+    getIndexFile().seek(pos);
     int len = 13;
     for(Long off : offsets)
     {
       pos += off;
-      indexFile.seek(pos);
+      getIndexFile().seek(pos);
       
       //1 + 4 + array.len + 8
-      indexFile.readBoolean();
-      len += indexFile.readInt();
+      getIndexFile().readBoolean();
+      len += getIndexFile().readInt();
       
-      indexFile.seek(pos);//go back
+      getIndexFile().seek(pos);//go back
       long nextPos = pos + len;
       
-      indexFile.getChannel().transferTo(pos, indexFile.length(), bkpFile);
+      getIndexFile().getChannel().transferTo(pos, getIndexFile().length(), bkpFile);
       
       len = 13;
     }
@@ -552,6 +553,13 @@ public class MappedFile implements Closeable, Runnable{
     String tmpFileName = fileName+"_d_"+System.currentTimeMillis();
     WritableByteChannel bkpFile = Channels.newChannel(new FileOutputStream(File.createTempFile(tmpFileName, null)));
     dataFile.getChannel().transferTo(0, dataFile.length(), bkpFile);
+  }
+  
+  public RandomAccessFile getIndexFile() {
+    return indexFile;
+  }
+  public void setIndexFile(RandomAccessFile indexFile) {
+    this.indexFile = indexFile;
   }
 
   
