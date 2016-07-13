@@ -75,9 +75,9 @@ public class IndexedFileTests {
     final BasicDurableMap ifile = new BasicDurableMap("C:\\data\\hazelq", "test.db");
     try
     {
-      /*ifile.write("one", "one".getBytes(StandardCharsets.UTF_8));
-      ifile.write("two", "two".getBytes(StandardCharsets.UTF_8));
-      ifile.write("3", "3".getBytes(StandardCharsets.UTF_8));*/
+      /*ifile.put("one", "one".getBytes(StandardCharsets.UTF_8));
+      ifile.put("two", "two".getBytes(StandardCharsets.UTF_8));
+      ifile.put("3", "3".getBytes(StandardCharsets.UTF_8));*/
       
       test(ifile);
       

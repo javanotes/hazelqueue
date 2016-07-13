@@ -28,12 +28,15 @@ SOFTWARE.
 */
 package com.reactiva.hazelq.net;
 
+import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 /**
  * A base class for handling fixed length byte messages. These type of streams 
  * would specify the total number of bytes to read, in their initial byte/s.
@@ -103,15 +106,26 @@ public class FixedLengthProtocolHandler extends AbstractProtocolHandler {
         throw new IOException("Expected bytes: "+length+"\tGot bytes: "+totalRead);
       }
       readBuffer.flip();
-      writeStream.write(readBuffer.array(), 0, read);
-      
+      bufferedRead(Arrays.copyOfRange(readBuffer.array(), 0, read));
       return totalRead == length;
     }
     
     return false;
                 
   }
-  
+  /**
+   * To be overridden for other buffering logic. Need to override {@link #getReadStream()} as well.
+   * @param nextBytes
+   * @throws IOException
+   */
+  protected void bufferedRead(byte[] nextBytes) throws IOException
+  {
+	 writeStream.write(nextBytes);
+  }
+  @Override
+  public InputStream getReadStream() {
+    return new ByteArrayInputStream(writeStream.toByteArray());
+  }
   public int getLengthOffset() {
     return lengthOffset;
   }
