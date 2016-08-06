@@ -29,7 +29,9 @@ SOFTWARE.
 package com.reactiva.hazelq;
 
 import java.nio.charset.StandardCharsets;
-
+/**
+ * 
+ */
 public class Message {
 
   /**

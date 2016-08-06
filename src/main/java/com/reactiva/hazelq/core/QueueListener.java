@@ -32,7 +32,8 @@ import java.util.Observable;
 
 import com.reactiva.hazelq.Message;
 /**
- * 
+ * Abstract base class to be extended for registering queue listeners.
+ * @see IQueueService#registerListener(QueueListener, String)
  */
 public abstract class QueueListener  {
 
@@ -77,12 +78,17 @@ public abstract class QueueListener  {
     return 1;
   }
   /**
-   * 
+   * Callback method invoked on message added to queue.
    * @param m
    * @throws Exception 
    */
   protected abstract void onMessage(Message m) throws Exception;
-  
+  /**
+   * Used internally.
+   * @param arg0
+   * @param arg1
+   * @throws Exception
+   */
   final void update(Observable arg0, Object arg1) throws Exception {
     MessageAndKey mk = (MessageAndKey) arg1;
     onMessage(mk.message.getPayload());

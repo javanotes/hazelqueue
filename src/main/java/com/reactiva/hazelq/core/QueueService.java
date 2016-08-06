@@ -51,7 +51,7 @@ import com.hazelcast.core.Member;
 import com.hazelcast.core.Partition;
 import com.reactiva.hazelq.Message;
 
-public class QueueService {
+public class QueueService implements IQueueService {
 
   static final String QMAP_SUFFIX = "_$1";
   private static final Logger log = LoggerFactory.getLogger(QueueService.class);
@@ -79,10 +79,10 @@ public class QueueService {
   }
   @Autowired
   private UIDGenerator uidGen;
-  /**
-   * If hazelcast is running
-   * @return
+  /* (non-Javadoc)
+   * @see com.reactiva.hazelq.core.IQueueService#isRunning()
    */
+  @Override
   public boolean isRunning(){
     try {
       return hz.getLifecycleService().isRunning();
@@ -191,11 +191,10 @@ public class QueueService {
   public QueueService(){
     
   }
-  /**
-   * Register listener on a given queue.
-   * @param ql
-   * @param q
+  /* (non-Javadoc)
+   * @see com.reactiva.hazelq.core.IQueueService#registerListener(com.reactiva.hazelq.core.QueueListener, java.lang.String)
    */
+  @Override
   public void registerListener(QueueListener ql, String q)
   {
     getL(q).register(ql);
@@ -245,11 +244,10 @@ public class QueueService {
     return getQ(q).add(m);
   }
   
-  /**
-   * Adds a new message to queue.
-   * @param msg
-   * @return
+  /* (non-Javadoc)
+   * @see com.reactiva.hazelq.core.IQueueService#add(com.reactiva.hazelq.Message)
    */
+  @Override
   public boolean add(Message msg)
   {
     if(!isRunning())
@@ -258,10 +256,9 @@ public class QueueService {
     return add(new QMessage(msg), msg.getDestination());
   }
   /**
-   * Non-Blocking poll.
+   * Non blocking poll
    * @param q
    * @return
-   * @throws InterruptedException
    */
   public MessageAndKey poll(String q)
   {
@@ -270,7 +267,7 @@ public class QueueService {
   }
   
   /**
-   * Will wait for a finite amount of time.
+   * Blocking poll
    * @param q
    * @param duration
    * @param unit
@@ -320,20 +317,19 @@ public class QueueService {
     return getQ(q).peek(duration, unit);
     
   }
-  /**
-   * 
-   * @param q
-   * @return
+  /* (non-Javadoc)
+   * @see com.reactiva.hazelq.core.IQueueService#size(java.lang.String)
    */
+  @Override
   public Integer size(String q)
   {
     return getQ(q).size();
     
   }
-  /**
-   * 
-   * @param q
+  /* (non-Javadoc)
+   * @see com.reactiva.hazelq.core.IQueueService#clear(java.lang.String)
    */
+  @Override
   public void clear(String q)
   {
     getQ(q).clear();

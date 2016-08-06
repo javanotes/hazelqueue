@@ -30,6 +30,7 @@ package com.reactiva.hazelq;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,15 +38,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.SpringApplicationConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
-import com.reactiva.hazelq.core.QueueService;
+import com.reactiva.hazelq.core.IQueueService;
 
 @RunWith(SpringJUnit4ClassRunner.class)
 @SpringApplicationConfiguration(classes = {HQServer.class})
 public class BasicQueueFuncTests {
 
   @Autowired
-  QueueService service;
+  IQueueService service;
 
+  static final String TEST_Q = "myWonderfulTestQueue";
   
   private static final Logger log = LoggerFactory.getLogger(BasicQueueFuncTests.class);
   private void pub()
@@ -58,11 +60,11 @@ public class BasicQueueFuncTests {
         for(int i=0; i<SimpleQueueListener.MSG_COUNT; i++)
         {
           s = SimpleQueueListener.COUNTER_PREFIX+ai.incrementAndGet();
-          log.debug("Submitting: "+s);
-          service.add(new Message(s, "testQ"));
+          log.info("Submitting: "+s);
+          service.add(new Message(s, TEST_Q));
         }
         
-        log.info("######### Submitted test messages ##########");
+        log.info("Submitted test messages count => "+SimpleQueueListener.MSG_COUNT);
       }
     }.start();
     
@@ -71,4 +73,10 @@ public class BasicQueueFuncTests {
   
   }
   AtomicInteger ai = new AtomicInteger();
+  @Test
+  public void testOneNodePublishConsume()
+  {
+    service.registerListener(new SimpleQueueListener(), TEST_Q);
+    pub();
+  }
 }
