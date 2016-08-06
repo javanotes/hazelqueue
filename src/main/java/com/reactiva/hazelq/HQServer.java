@@ -30,38 +30,50 @@ package com.reactiva.hazelq;
 
 import java.io.IOException;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.SpringApplication;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.hazelcast.HazelcastAutoConfiguration;
+import org.springframework.boot.autoconfigure.hazelcast.HazelcastInstanceFactory;
+import org.springframework.boot.autoconfigure.hazelcast.HazelcastProperties;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.core.io.Resource;
 
+import com.hazelcast.core.Hazelcast;
+import com.hazelcast.core.HazelcastInstance;
 import com.reactiva.hazelq.core.QueueService;
 import com.reactiva.hazelq.core.UIDGenerator;
-import com.reactiva.hazelq.net.ProtocolHandlerFactory;
-import com.reactiva.hazelq.net.ServerSocketListener;
 
-@SpringBootApplication
-public class Server {
+@SpringBootApplication(exclude = {HazelcastAutoConfiguration.class})
+@EnableConfigurationProperties(HazelcastProperties.class)
+public class HQServer {
+    private static final Logger log = LoggerFactory.getLogger(HQServer.class);
+	@Configuration
+	static class HazelcastConfigFileConfiguration {
 
-  @Value("${server.port}")
-  private int port;
-  @Value("${server.io-threads}")
-  private int ioThreads;
-  @Value("${server.event-threads.max}")
-  private int evtThreadsMax;
-  @Value("${server.event-threads.min}")
-  private int evtThreadsMin;
-  
+		@Autowired
+		private HazelcastProperties hazelcastProperties;
+
+		@Bean
+		public HazelcastInstance hazelcastInstance() throws IOException {
+			log.info("::::::::: Startup sequence initiated ::::::::");
+			log.info("Booting Hazelcast system..");
+			Resource config = this.hazelcastProperties.resolveConfigLocation();
+			if (config != null) {
+				return new HazelcastInstanceFactory(config).getHazelcastInstance();
+			}
+			return Hazelcast.newHazelcastInstance();
+		}
+
+	}
+	
   @Bean
-  public ProtocolHandlerFactory handlerFactory()
-  {
-    return new ProtocolHandlerFactory();
-  }
-  @Bean
+  @DependsOn("hazelcastInstance")
   public QueueService service()
   {
     return new QueueService();
@@ -72,23 +84,12 @@ public class Server {
   {
     return new UIDGenerator();
   }
-  @Bean
-  @DependsOn({"uidgen"})
-  public ServerSocketListener listener() throws IOException
-  {
-    return new ServerSocketListener(port, evtThreadsMax, evtThreadsMin, ioThreads);
-  }
+  
   public static void main(String[] args) {
-    SpringApplication.run(Server.class, args);
+	  new SpringApplicationBuilder()
+	    .sources(HQServer.class)
+	    //.bannerMode(org.springframework.boot.Banner.Mode.OFF)
+	    .run(args);
   }
-  @PostConstruct
-  private void init() throws IOException
-  {
-    listener().startServer();
-  }
-  @PreDestroy
-  private void destroy() throws IOException
-  {
-    listener().stopServer();
-  }
+  
 }

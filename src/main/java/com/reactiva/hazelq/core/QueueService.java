@@ -120,6 +120,7 @@ public class QueueService {
   @PostConstruct
   private void init()
   {
+	  
     pollerThreads = new ForkJoinPool(Runtime.getRuntime().availableProcessors(), new ForkJoinWorkerThreadFactory() {
       
       @Override

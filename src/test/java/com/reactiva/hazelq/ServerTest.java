@@ -34,6 +34,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -129,7 +130,10 @@ class ServerTest implements Closeable{
   public static void main(String[] args) {
     System.out.println("-- Start run --");  
     long t1 = System.currentTimeMillis();
-    loadTest(1000, "localhost", 8092);
+    //loadTest(1000, "localhost", 8092);
+    
+    int n = 400;
+    System.out.println(new String(ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN).putInt(n).array()));
     System.out.println("-- End run --");
     System.out.println("Time taken (ms): "+(System.currentTimeMillis()-t1));
   }
