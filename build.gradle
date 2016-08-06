@@ -11,15 +11,16 @@ buildscript {
   }
 }
 
+apply plugin: 'eclipse'
 apply plugin: 'java'
 apply plugin: 'spring-boot'
 
 springBoot {
-    mainClass = "com.reactiva.hazelq.Server"
+    mainClass = "com.reactiva.hazelq.HQServer"
 }
 
 jar {
-	baseName = 'proto-server'
+	baseName = 'hazelqueue'
 	version =  '0.1'
 	
 }

@@ -94,35 +94,28 @@ class TCPConnector implements Runnable{
 	private final boolean proxy;
 	private Config config;
 	/**
-	 * A TCP connector which can act as a server or proxy.
+	 * TCP server listener with provided IO threads and executor threads
 	 * @param port
 	 * @param ioThreadCount
+	 * @param execThreadCount
 	 */
-	public TCPConnector(int port, int ioThreadCount, int execThreadCount, boolean proxy) {
+	public TCPConnector(int port, int ioThreadCount, int execThreadCount) {
 		this.port = port;
 		ioThreads = ioThreadCount;
 		execThreads = execThreadCount;
-		this.proxy = proxy;
+		this.proxy = false;
 		
 	}
 	
 	/**
-	 * TCP connector acting as server.
+	 * TCP server listener with provided IO threads and processor count based executor threads
 	 * @param port
 	 * @param workerThreadCount
 	 */
 	public TCPConnector(int port, int workerThreadCount) {
-		this(port, workerThreadCount, Runtime.getRuntime().availableProcessors(), false);
+		this(port, workerThreadCount, Runtime.getRuntime().availableProcessors());
 	}
-	/**
-	 * 
-	 * @param port
-	 * @param workerThreadCount
-	 * @param proxyMode
-	 */
-	public TCPConnector(int port, int workerThreadCount, boolean proxyMode) {
-		this(port, 1, workerThreadCount, proxyMode);
-	}
+	
 	/**
 	 * 
 	 */

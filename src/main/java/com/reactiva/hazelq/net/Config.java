@@ -130,27 +130,16 @@ public class Config {
 	@DependsOn({"service", "encoder", "processor", "processorAsync", "targets"})
 	public TCPConnector server() throws Exception
 	{
-		TCPConnector s = new TCPConnector(port, ioThreadCount, execThreadCount, proxyMode);
+		TCPConnector s = new TCPConnector(port, ioThreadCount, execThreadCount);
 		s.setConfig(this);
-		//in server mode, initialize request handlers.
-		if (!proxyMode) {
-			s.setCodecHandler(codec());
-			s.processorAsync = processorAsync();
-			s.encoder = encoder();
-			s.processor = processor();
-			s.terminal = terminal();
-		}
-		else
-		{
-			//proxy mode
-			System.err.println("++++++++++++++++++++++++++++++++++++++++++++++++++");
-			System.err.println("|  ** WARN: Proxy implementation is unstable **  |");
-			System.err.println("++++++++++++++++++++++++++++++++++++++++++++++++++");
-		}
+		s.setCodecHandler(codec());
+		s.processorAsync = processorAsync();
+		s.encoder = encoder();
+		s.processor = processor();
+		s.terminal = terminal();
 		
 		return s;
 	}
-	
 	
 	@Bean
 	RequestProcessorHandler processor() throws Exception
