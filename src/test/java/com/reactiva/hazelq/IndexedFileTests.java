@@ -72,12 +72,12 @@ public class IndexedFileTests {
   }
   public static void main(String[] args) throws IOException {
 
-    final BasicDurableMap ifile = new BasicDurableMap("C:\\data\\hazelq", "test.db");
+    final BasicDurableMap ifile = new BasicDurableMap("C:\\data\\hazelq", "test1");
     try
     {
-      /*ifile.put("one", "one".getBytes(StandardCharsets.UTF_8));
+      ifile.put("one", "one".getBytes(StandardCharsets.UTF_8));
       ifile.put("two", "two".getBytes(StandardCharsets.UTF_8));
-      ifile.put("3", "3".getBytes(StandardCharsets.UTF_8));*/
+      ifile.put("3", "3".getBytes(StandardCharsets.UTF_8));
       
       test(ifile);
       

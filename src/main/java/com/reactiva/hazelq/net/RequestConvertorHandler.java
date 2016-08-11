@@ -1,4 +1,4 @@
-package com.reactiva.hazelq.net.pipe;
+package com.reactiva.hazelq.net;
 
 import java.util.List;
 
@@ -38,6 +38,7 @@ public class RequestConvertorHandler extends ByteToMessageDecoder {
 		byte[] b = new byte[in.readableBytes()];
     	in.readBytes(b);
     	log.debug("Transforming request to object");
+    	//TODO: codec.decode
     	Object o  = null;//= codec.decode(ITOCLogin.class, new DataInputStream(new ByteArrayInputStream(b)));
     	log.debug("Transformed request to object");
     	return o;

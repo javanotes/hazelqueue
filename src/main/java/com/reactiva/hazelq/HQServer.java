@@ -88,7 +88,6 @@ public class HQServer {
   public static void main(String[] args) {
 	  new SpringApplicationBuilder()
 	    .sources(HQServer.class)
-	    //.bannerMode(org.springframework.boot.Banner.Mode.OFF)
 	    .run(args);
   }
   

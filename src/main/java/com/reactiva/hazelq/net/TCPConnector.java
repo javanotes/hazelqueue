@@ -7,11 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.Assert;
 
-import com.reactiva.hazelq.net.pipe.RequestConvertorHandler;
-import com.reactiva.hazelq.net.pipe.RequestProcessorHandler;
-import com.reactiva.hazelq.net.pipe.RequestProcessorHandlerAsync;
-import com.reactiva.hazelq.net.pipe.ResponseConvertorHandler;
-import com.reactiva.hazelq.net.pipe.TerminalHandler;
+import com.reactiva.hazelq.TCPConfig;
 import com.reactiva.hazelq.protoc.LengthBasedCodec;
 import com.reactiva.hazelq.protoc.impl.HQCodecWrapper;
 
@@ -32,7 +28,7 @@ import io.netty.util.concurrent.RejectedExecutionHandler;
  * @author esutdal
  *
  */
-class TCPConnector implements Runnable{
+public class TCPConnector implements Runnable{
 	private EventExecutorGroup eventExecutors, procExecutors;
 	private HQCodecWrapper codecHandler;
 	public LengthBasedCodec getCodecHandler() {
@@ -58,16 +54,16 @@ class TCPConnector implements Runnable{
 		 * assuming the actual message size would be much lesser than that.
 		 * TODO: make LengthFieldBasedFrameDecoder configurable?
 		 */
-		ch.pipeline().addLast(eventExecutors, new LengthFieldBasedFrameDecoder(config.protoLenMax, config.protoLenOffset, 
-				config.protoLenBytes, Math.negateExact(config.protoLenBytes), 0));
+		ch.pipeline().addLast(eventExecutors, new LengthFieldBasedFrameDecoder(config.getProtoLenMax(), config.getProtoLenOffset(), 
+				config.getProtoLenBytes(), Math.negateExact(config.getProtoLenBytes()), 0));
 		
 		//ch.pipeline().addLast(executor, new LengthFieldBasedFrameDecoder(config.protoLenMax, config.protoLenOffset, config.protoLenBytes));
 		
 		ch.pipeline().addLast(eventExecutors, new RequestConvertorHandler(codecHandler));
 		//ch.pipeline().addLast(concExecutor, processor);
-		ch.pipeline().addLast(procExecutors, processorAsync);
-		ch.pipeline().addLast(eventExecutors, encoder);
-		ch.pipeline().addLast(eventExecutors, terminal);
+		ch.pipeline().addLast(procExecutors, getProcessorAsync());
+		ch.pipeline().addLast(eventExecutors, getEncoder());
+		ch.pipeline().addLast(eventExecutors, getTerminal());
 		
 	}
 		
@@ -87,12 +83,12 @@ class TCPConnector implements Runnable{
 	private static Logger log = LoggerFactory.getLogger(TCPConnector.class);
 	private int port, ioThreads, execThreads;
 	
-	protected RequestProcessorHandler processor;
-	protected ResponseConvertorHandler encoder;
-	protected TerminalHandler terminal;
+	private RequestProcessorHandler processor;
+	private ResponseConvertorHandler encoder;
+	private TerminalHandler terminal;
 	
 	private final boolean proxy;
-	private Config config;
+	private TCPConfig config;
 	/**
 	 * TCP server listener with provided IO threads and executor threads
 	 * @param port
@@ -145,7 +141,7 @@ class TCPConnector implements Runnable{
 	 */
 	private void initExecThreads()
 	{
-		eventExecutors = new DefaultEventExecutorGroup(config.eventThreadCount, new ThreadFactory() {
+		eventExecutors = new DefaultEventExecutorGroup(config.getEventThreadCount(), new ThreadFactory() {
 			int n = 1;
 			@Override
 			public Thread newThread(Runnable arg0) {
@@ -201,7 +197,7 @@ class TCPConnector implements Runnable{
 
 	}
 	
-	void stopMonitor()
+	public void stopMonitor()
 	{
 		running = false;
 	}
@@ -235,13 +231,37 @@ class TCPConnector implements Runnable{
 		log.info("Started TCP transport on port "+port + " in "+(proxy ? "PROXY" : "SERVER") + " mode");
 		running = true;
 	}
-	RequestProcessorHandlerAsync processorAsync;
+	private RequestProcessorHandlerAsync processorAsync;
 	
-	public Config getConfig() {
+	public TCPConfig getConfig() {
 		return config;
 	}
-	public void setConfig(Config config) {
+	public void setConfig(TCPConfig config) {
 		this.config = config;
+	}
+	public RequestProcessorHandlerAsync getProcessorAsync() {
+		return processorAsync;
+	}
+	public void setProcessorAsync(RequestProcessorHandlerAsync processorAsync) {
+		this.processorAsync = processorAsync;
+	}
+	public ResponseConvertorHandler getEncoder() {
+		return encoder;
+	}
+	public void setEncoder(ResponseConvertorHandler encoder) {
+		this.encoder = encoder;
+	}
+	public RequestProcessorHandler getProcessor() {
+		return processor;
+	}
+	public void setProcessor(RequestProcessorHandler processor) {
+		this.processor = processor;
+	}
+	public TerminalHandler getTerminal() {
+		return terminal;
+	}
+	public void setTerminal(TerminalHandler terminal) {
+		this.terminal = terminal;
 	}
 	
 

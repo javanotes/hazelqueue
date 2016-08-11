@@ -1,4 +1,4 @@
-package com.reactiva.hazelq.net;
+package com.reactiva.hazelq;
 
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
@@ -16,14 +16,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 
-import com.reactiva.hazelq.net.pipe.RequestProcessorHandler;
-import com.reactiva.hazelq.net.pipe.RequestProcessorHandlerAsync;
-import com.reactiva.hazelq.net.pipe.ResponseConvertorHandler;
-import com.reactiva.hazelq.net.pipe.TerminalHandler;
+import com.reactiva.hazelq.net.RequestProcessorHandler;
+import com.reactiva.hazelq.net.RequestProcessorHandlerAsync;
+import com.reactiva.hazelq.net.ResponseConvertorHandler;
+import com.reactiva.hazelq.net.TCPConnector;
+import com.reactiva.hazelq.net.TerminalHandler;
 import com.reactiva.hazelq.protoc.impl.HQCodecWrapper;
 
 @Configuration
-public class Config {
+public class TCPConfig {
 
 	public boolean isProxyMode() {
 		return proxyMode;
@@ -47,7 +48,7 @@ public class Config {
 	boolean proxyMode;
 	@Value("${server.port}")
 	int port;
-	@Value("${server.io-threads: 1}")
+	@Value("${server.io-threads: 2}")
 	int ioThreadCount;
 	@Value("${server.event-threads: 2}")
 	int eventThreadCount;
@@ -133,10 +134,10 @@ public class Config {
 		TCPConnector s = new TCPConnector(port, ioThreadCount, execThreadCount);
 		s.setConfig(this);
 		s.setCodecHandler(codec());
-		s.processorAsync = processorAsync();
-		s.encoder = encoder();
-		s.processor = processor();
-		s.terminal = terminal();
+		s.setProcessorAsync(processorAsync());
+		s.setEncoder(encoder());
+		s.setProcessor(processor());
+		s.setTerminal(terminal());
 		
 		return s;
 	}
@@ -168,7 +169,7 @@ public class Config {
 			return new HQCodecWrapper(StandardCharsets.UTF_8, useByteBuf);
 		}
 	}
-	private static final Logger log = LoggerFactory.getLogger(Config.class);
+	private static final Logger log = LoggerFactory.getLogger(TCPConfig.class);
 	@Bean
 	TerminalHandler terminal()
 	{

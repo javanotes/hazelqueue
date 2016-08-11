@@ -1,4 +1,4 @@
-package com.reactiva.hazelq.net.pipe;
+package com.reactiva.hazelq.net;
 
 import java.io.Serializable;
 import java.util.List;

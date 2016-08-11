@@ -1,9 +1,7 @@
-package com.reactiva.hazelq.net.pipe;
+package com.reactiva.hazelq.net;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.reactiva.hazelq.net.Utils;
 
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;

@@ -41,7 +41,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import com.reactiva.hazelq.core.IQueueService;
 
 @RunWith(SpringJUnit4ClassRunner.class)
-@SpringApplicationConfiguration(classes = {HQServer.class})
+@SpringApplicationConfiguration(classes = {HQServer.class, TCPConfig.class})
 public class BasicQueueFuncTests {
 
   @Autowired
